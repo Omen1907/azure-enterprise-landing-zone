@@ -1,0 +1,5 @@
+{
+  "storageAccountName": { "value": "storeexample123" },
+  "adminPassword": { "value": "REPLACE_ME" },
+  "adminUsername": { "value": "REPLACE_ME" }
+}
