@@ -1,31 +1,14 @@
-@description('Globally unique lowercase storage account name.')
-@minLength(3)
-@maxLength(24)
-param storageAccountName string = toLower('store${uniqueString(resourceGroup().id)}')
-
-param location string = resourceGroup().location
-
-@description('Log Analytics workspace name.')
-param logAnalyticsWorkspaceName string = 'entlzlog-${uniqueString(resourceGroup().id)}'
-
+param storageAccountName string
+param logAnalyticsWorkspaceName string
 @secure()
-@description('Admin password for the VM')
 param adminPassword string
-
-@description('Admin username for the VM')
-param adminUsername string = 'azureadmin'
-
-param environment string = 'dev'
-param prefix string = 'ent-${environment}'
-param tags object = {
-  environment: environment
-  project: 'enterprise-landing-zone'
-}
-
-@description('Your public IP address for RDP (x.x.x.x)')
+param adminUsername string
+param environment string
+param prefix string
+param tags object
 param adminPublicIp string
-
-param vmCount int = 2
+param vmCount int
+param location string = resourceGroup().location
 
 // ====================
 // VIRTUAL NETWORK
