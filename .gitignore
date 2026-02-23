@@ -1,0 +1,3 @@
+# Ignore parameter files with secrets
+*.parameters.json
+secrets/
