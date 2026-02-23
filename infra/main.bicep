@@ -2,22 +2,39 @@
 @minLength(3)
 @maxLength(24)
 param storageAccountName string = toLower('store${uniqueString(resourceGroup().id)}')
+
 param location string = resourceGroup().location
+
 @description('Log Analytics workspace name.')
-param logAnalyticsWorkspaceName string = 'entLZLog-${uniqueString(resourceGroup().id)}'
+param logAnalyticsWorkspaceName string = 'entlzlog-${uniqueString(resourceGroup().id)}'
+
 @secure()
 @description('Admin password for the VM')
 param adminPassword string
+
 @description('Admin username for the VM')
 param adminUsername string = 'azureadmin'
+
 param environment string = 'dev'
-param prefix string
-param tags object
+param prefix string = 'ent-${environment}'
+param tags object = {
+  environment: environment
+  project: 'enterprise-landing-zone'
+}
+
+@description('Your public IP address for RDP (x.x.x.x)')
+param adminPublicIp string
+
 param vmCount int = 2
 
+// ====================
+// VIRTUAL NETWORK
+// ====================
+
 resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-07-01' = {
-  name: 'ent-${environment}-vnet'
+  name: '${prefix}-vnet'
   location: location
+  tags: tags
   properties: {
     addressSpace: {
       addressPrefixes: [
@@ -27,7 +44,9 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-07-01' = {
   }
 }
 
-param adminPublicIp string
+// ====================
+// NSGs
+// ====================
 
 resource webNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
   name: '${prefix}-web-nsg'
@@ -93,7 +112,7 @@ resource appNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
           protocol: 'Tcp'
           sourcePortRange: '*'
           destinationPortRange: '8080'
-          sourceAddressPrefix: '10.0.1.0/24' // Web subnet
+          sourceAddressPrefix: '10.0.1.0/24'
           destinationAddressPrefix: '*'
         }
       }
@@ -123,6 +142,10 @@ resource dbNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
     ]
   }
 }
+
+// ====================
+// SUBNETS
+// ====================
 
 resource subnetWeb 'Microsoft.Network/virtualNetworks/subnets@2024-07-01' = {
   name: '${virtualNetwork.name}/Subnet-web'
@@ -154,6 +177,43 @@ resource subnetDB 'Microsoft.Network/virtualNetworks/subnets@2024-07-01' = {
   }
 }
 
+// ====================
+// AVAILABILITY SET
+// ====================
+
+resource availabilitySet 'Microsoft.Compute/availabilitySets@2024-07-01' = {
+  name: '${prefix}-avset'
+  location: location
+  tags: tags
+  properties: {
+    platformFaultDomainCount: 2
+    platformUpdateDomainCount: 2
+  }
+  sku: {
+    name: 'Aligned'
+  }
+}
+
+// ====================
+// PUBLIC IPS
+// ====================
+
+resource publicIps 'Microsoft.Network/publicIPAddresses@2024-07-01' = [for i in range(0, vmCount): {
+  name: '${prefix}-pip-${i}'
+  location: location
+  tags: tags
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+}]
+
+// ====================
+// NICs
+// ====================
+
 resource nics 'Microsoft.Network/networkInterfaces@2024-07-01' = [for i in range(0, vmCount): {
   name: '${prefix}-nic-${i}'
   location: location
@@ -167,17 +227,27 @@ resource nics 'Microsoft.Network/networkInterfaces@2024-07-01' = [for i in range
             id: subnetWeb.id
           }
           privateIPAllocationMethod: 'Dynamic'
+          publicIPAddress: {
+            id: publicIps[i].id
+          }
         }
       }
     ]
   }
 }]
 
+// ====================
+// VMs
+// ====================
+
 resource vms 'Microsoft.Compute/virtualMachines@2024-07-01' = [for i in range(0, vmCount): {
   name: '${prefix}-vm-${i}'
   location: location
   tags: tags
   properties: {
+    availabilitySet: {
+      id: availabilitySet.id
+    }
     hardwareProfile: {
       vmSize: 'Standard_B2s'
     }
@@ -195,7 +265,6 @@ resource vms 'Microsoft.Compute/virtualMachines@2024-07-01' = [for i in range(0,
         managedDisk: {
           storageAccountType: 'Standard_LRS'
         }
-        diskSizeGB: 127
       }
     }
     osProfile: {
@@ -218,6 +287,10 @@ resource vms 'Microsoft.Compute/virtualMachines@2024-07-01' = [for i in range(0,
   }
 }]
 
+// ====================
+// LOG ANALYTICS
+// ====================
+
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2024-07-01' = {
   name: logAnalyticsWorkspaceName
   location: location
@@ -227,10 +300,12 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2024-07
       name: 'PerGB2018'
     }
     retentionInDays: 30
-    publicNetworkAccessForIngestion: 'Enabled'
-    publicNetworkAccessForQuery: 'Enabled'
   }
 }
+
+// ====================
+// STORAGE
+// ====================
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
   name: storageAccountName
@@ -245,69 +320,15 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
     allowBlobPublicAccess: false
-    publicNetworkAccess: 'Enabled'
     allowSharedKeyAccess: false
   }
 }
 
-resource vmExtensions 'Microsoft.Compute/virtualMachines/extensions@2024-01-01' = [for i in range(0, vmCount): {
-  name: '${vms[i].name}/AzureMonitorWindowsAgent'
-  location: location
-  properties: {
-    publisher: 'Microsoft.Azure.Monitor'
-    type: 'AzureMonitorWindowsAgent'
-    typeHandlerVersion: '1.0'
-    autoUpgradeMinorVersion: true
-  }
-}]
-
-resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2024-01-01' = {
-  name: '${prefix}-dcr'
-  location: location
-  tags: tags
-  properties: {
-    destinations: {
-      logAnalytics: [
-        {
-          name: 'la-destination'
-          workspaceResourceId: logAnalyticsWorkspace.id
-        }
-      ]
-    }
-    dataFlows: [
-      {
-        streams: [
-          'Microsoft-Event'
-        ]
-        destinations: [
-          'la-destination'
-        ]
-      }
-    ]
-    dataSources: {
-      windowsEventLogs: [
-        {
-          name: 'eventLogs'
-          streams: [
-            'Microsoft-Event'
-          ]
-          xPathQueries: [
-            'System!*'
-          ]
-        }
-      ]
-    }
-  }
-}
-
-resource dcrAssociations 'Microsoft.Insights/dataCollectionRuleAssociations@2024-01-01' = [for i in range(0, vmCount): {
-  name: '${vms[i].name}-association'
-  scope: vms[i]
-  properties: {
-    dataCollectionRuleId: dataCollectionRule.id
-  }
-}]
+// ====================
+// OUTPUTS
+// ====================
 
 output vmNames array = [for vm in vms: vm.name]
+output publicIpAddresses array = [for pip in publicIps: pip.properties.ipAddress]
 output logAnalyticsWorkspaceId string = logAnalyticsWorkspace.id
 output storageAccountName string = storageAccount.name
