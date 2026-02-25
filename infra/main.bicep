@@ -7,6 +7,8 @@ param environment string
 param prefix string
 param tags object
 param adminPublicIp string
+param adminObjectId string
+param securityGroupObjectId string
 param vmCount int
 param location string = resourceGroup().location
 
@@ -306,6 +308,97 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
     allowSharedKeyAccess: false
   }
 }
+
+// ====================
+// RBAC
+// ====================
+
+resource adminRbac 'Microsoft.Authorization/roleAssignments@2024-04-01-preview' = {
+  name: guid(resourceGroup().id, 'admin-owner')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '8e3af657-a8ff-443c-a75c-2fe8c4bcb635'
+    )
+    principalId: 'adminObjectId'
+    principalType: 'User'
+  }
+}
+
+resource securityRbac 'Microsoft.Authorization/roleAssignments@2024-04-01-preview' = {
+  name: guid(resourceGroup().id, 'security-reader')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'acdd72a7-3385-48ef-bd42-f606fba81ae7'
+    )
+    principalId: 'securityGroupObjectId'
+    principalType: 'Group'
+  }
+}
+
+// ====================
+// Policies
+// ====================
+
+resource requireEnvironmentTag 'Microsoft.Authorization/policyAssignments@2024-04-01' = {
+  name: '${prefix}-require-env-tag'
+  scope: resourceGroup()
+  properties: {
+    displayName: 'Require Environment Tag'
+    description: 'Ensure all resources have the Environment tag'
+    policyDefinitionId: '/providers/Microsoft.Authorization/policyDefinitions/require-a-tag-on-resources'
+    parameters: {
+      tagName: {
+        value: 'Environment'
+      }
+    }
+  }
+}
+
+resource allowedLocationsPolicy 'Microsoft.Authorization/policyAssignments@2024-04-01' = {
+  name: '${prefix}-allowed-locations'
+  scope: resourceGroup()
+  properties: {
+    displayName: 'Allowed Locations'
+    description: 'Restrict resources to allowed regions'
+    policyDefinitionId: '/providers/Microsoft.Authorization/policyDefinitions/allowed-locations'
+    parameters: {
+      listOfAllowedLocations: {
+        value: [
+          'eastus'
+          'westeurope'
+        ]
+      }
+    }
+  }
+}
+
+// ====================
+// Monitor agent
+// ====================
+
+resource monitorAgent 'Microsoft.HybridCompute/machines/extensions@2024-07-01' = [
+  for i in range(0, vmCount): {
+    name: '${vms[i].name}/AzureMonitorAgent'
+    location: location
+    properties: {
+      publisher: 'Microsoft.Azure.Monitor'
+      type: 'AzureMonitorWindowsAgent'
+      typeHandlerVersion: '1.0'
+      autoUpgradeMinorVersion: true
+      settings: {
+        workspaceId: logAnalyticsWorkspace.properties.customerId
+      }
+    }
+    dependsOn: [
+      vms[i]
+      logAnalyticsWorkspace
+    ]
+  }
+]
 
 // ====================
 // OUTPUTS
