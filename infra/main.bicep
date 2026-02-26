@@ -17,7 +17,7 @@ param location string = resourceGroup().location
 // ====================
 
 resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-07-01' = {
-  name: '${prefix}-vnet'
+  name: '${prefix}-${environment}-vnet'
   location: location
   tags: tags
   properties: {
@@ -34,7 +34,7 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-07-01' = {
 // ====================
 
 resource webNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
-  name: '${prefix}-web-nsg'
+  name: '${prefix}-${environment}-web-nsg'
   location: location
   tags: tags
   properties: {
@@ -83,7 +83,7 @@ resource webNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
 }
 
 resource appNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
-  name: '${prefix}-app-nsg'
+  name: '${prefix}-${environment}-app-nsg'
   location: location
   tags: tags
   properties: {
@@ -106,7 +106,7 @@ resource appNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
 }
 
 resource dbNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
-  name: '${prefix}-db-nsg'
+  name: '${prefix}-${environment}-db-nsg'
   location: location
   tags: tags
   properties: {
@@ -133,7 +133,8 @@ resource dbNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
 // ====================
 
 resource subnetWeb 'Microsoft.Network/virtualNetworks/subnets@2024-07-01' = {
-  name: '${virtualNetwork.name}/Subnet-web'
+  parent: virtualNetwork
+  name: 'Subnet-web'
   properties: {
     addressPrefix: '10.0.1.0/24'
     networkSecurityGroup: {
@@ -143,7 +144,8 @@ resource subnetWeb 'Microsoft.Network/virtualNetworks/subnets@2024-07-01' = {
 }
 
 resource subnetApp 'Microsoft.Network/virtualNetworks/subnets@2024-07-01' = {
-  name: '${virtualNetwork.name}/Subnet-app'
+  parent: virtualNetwork
+  name: 'Subnet-app'
   properties: {
     addressPrefix: '10.0.2.0/24'
     networkSecurityGroup: {
@@ -153,7 +155,8 @@ resource subnetApp 'Microsoft.Network/virtualNetworks/subnets@2024-07-01' = {
 }
 
 resource subnetDB 'Microsoft.Network/virtualNetworks/subnets@2024-07-01' = {
-  name: '${virtualNetwork.name}/Subnet-db'
+  parent: virtualNetwork
+  name: 'Subnet-db'
   properties: {
     addressPrefix: '10.0.3.0/24'
     networkSecurityGroup: {
@@ -167,7 +170,7 @@ resource subnetDB 'Microsoft.Network/virtualNetworks/subnets@2024-07-01' = {
 // ====================
 
 resource availabilitySet 'Microsoft.Compute/availabilitySets@2024-07-01' = {
-  name: '${prefix}-avset'
+  name: '${prefix}-${environment}-avset'
   location: location
   tags: tags
   properties: {
@@ -183,100 +186,106 @@ resource availabilitySet 'Microsoft.Compute/availabilitySets@2024-07-01' = {
 // PUBLIC IPS
 // ====================
 
-resource publicIps 'Microsoft.Network/publicIPAddresses@2024-07-01' = [for i in range(0, vmCount): {
-  name: '${prefix}-pip-${i}'
-  location: location
-  tags: tags
-  sku: {
-    name: 'Standard'
+resource publicIps 'Microsoft.Network/publicIPAddresses@2024-07-01' = [
+  for i in range(0, vmCount): {
+    name: '${prefix}-${environment}-pip-${i}'
+    location: location
+    tags: tags
+    sku: {
+      name: 'Standard'
+    }
+    properties: {
+      publicIPAllocationMethod: 'Static'
+    }
   }
-  properties: {
-    publicIPAllocationMethod: 'Static'
-  }
-}]
+]
 
 // ====================
 // NICs
 // ====================
 
-resource nics 'Microsoft.Network/networkInterfaces@2024-07-01' = [for i in range(0, vmCount): {
-  name: '${prefix}-nic-${i}'
-  location: location
-  tags: tags
-  properties: {
-    ipConfigurations: [
-      {
-        name: 'ipconfig1'
-        properties: {
-          subnet: {
-            id: subnetWeb.id
-          }
-          privateIPAllocationMethod: 'Dynamic'
-          publicIPAddress: {
-            id: publicIps[i].id
+resource nics 'Microsoft.Network/networkInterfaces@2024-07-01' = [
+  for i in range(0, vmCount): {
+    name: '${prefix}-${environment}-nic-${i}'
+    location: location
+    tags: tags
+    properties: {
+      ipConfigurations: [
+        {
+          name: 'ipconfig1'
+          properties: {
+            subnet: {
+              id: subnetWeb.id
+            }
+            privateIPAllocationMethod: 'Dynamic'
+            publicIPAddress: {
+              id: publicIps[i].id
+            }
           }
         }
-      }
-    ]
+      ]
+    }
   }
-}]
+]
 
 // ====================
 // VMs
 // ====================
 
-resource vms 'Microsoft.Compute/virtualMachines@2024-07-01' = [for i in range(0, vmCount): {
-  name: '${prefix}-vm-${i}'
-  location: location
-  tags: tags
-  properties: {
-    availabilitySet: {
-      id: availabilitySet.id
-    }
-    hardwareProfile: {
-      vmSize: 'Standard_B2s'
-    }
-    storageProfile: {
-      imageReference: {
-        publisher: 'MicrosoftWindowsServer'
-        offer: 'WindowsServer'
-        sku: '2022-Datacenter'
-        version: 'latest'
+resource vms 'Microsoft.Compute/virtualMachines@2024-07-01' = [
+  for i in range(0, vmCount): {
+    name: '${prefix}-${environment}-vm-${i}'
+    location: location
+    tags: tags
+    properties: {
+      availabilitySet: {
+        id: availabilitySet.id
       }
-      osDisk: {
-        name: '${prefix}-osdisk-${i}'
-        caching: 'ReadWrite'
-        createOption: 'FromImage'
-        managedDisk: {
-          storageAccountType: 'Standard_LRS'
+      hardwareProfile: {
+        vmSize: 'Standard_D2s_v3'
+      }
+      storageProfile: {
+        imageReference: {
+          publisher: 'MicrosoftWindowsServer'
+          offer: 'WindowsServer'
+          sku: '2022-Datacenter'
+          version: 'latest'
+        }
+        osDisk: {
+          name: '${prefix}-${environment}-osdisk-${i}'
+          caching: 'ReadWrite'
+          createOption: 'FromImage'
+          managedDisk: {
+            storageAccountType: 'Standard_LRS'
+          }
         }
       }
-    }
-    osProfile: {
-      computerName: '${prefix}-vm-${i}'
-      adminUsername: adminUsername
-      adminPassword: adminPassword
-    }
-    networkProfile: {
-      networkInterfaces: [
-        {
-          id: nics[i].id
+      osProfile: {
+        computerName: '${prefix}-${environment}-vm-${i}'
+        adminUsername: adminUsername
+        adminPassword: adminPassword
+      }
+      networkProfile: {
+        networkInterfaces: [
+          {
+            id: nics[i].id
+          }
+        ]
+      }
+      diagnosticsProfile: {
+        bootDiagnostics: {
+          enabled: true
         }
-      ]
-    }
-    diagnosticsProfile: {
-      bootDiagnostics: {
-        enabled: true
       }
     }
   }
-}]
+]
 
 // ====================
 // LOG ANALYTICS
 // ====================
 
-resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2024-07-01' = {
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
   location: location
   tags: tags
@@ -313,7 +322,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
 // RBAC
 // ====================
 
-resource adminRbac 'Microsoft.Authorization/roleAssignments@2024-04-01-preview' = {
+resource adminRbac 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(resourceGroup().id, 'admin-owner')
   scope: resourceGroup()
   properties: {
@@ -321,12 +330,12 @@ resource adminRbac 'Microsoft.Authorization/roleAssignments@2024-04-01-preview' 
       'Microsoft.Authorization/roleDefinitions',
       '8e3af657-a8ff-443c-a75c-2fe8c4bcb635'
     )
-    principalId: 'adminObjectId'
+    principalId: adminObjectId
     principalType: 'User'
   }
 }
 
-resource securityRbac 'Microsoft.Authorization/roleAssignments@2024-04-01-preview' = {
+resource securityRbac 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(resourceGroup().id, 'security-reader')
   scope: resourceGroup()
   properties: {
@@ -334,7 +343,7 @@ resource securityRbac 'Microsoft.Authorization/roleAssignments@2024-04-01-previe
       'Microsoft.Authorization/roleDefinitions',
       'acdd72a7-3385-48ef-bd42-f606fba81ae7'
     )
-    principalId: 'securityGroupObjectId'
+    principalId: securityGroupObjectId
     principalType: 'Group'
   }
 }
@@ -343,44 +352,43 @@ resource securityRbac 'Microsoft.Authorization/roleAssignments@2024-04-01-previe
 // Policies
 // ====================
 
-resource requireEnvironmentTag 'Microsoft.Authorization/policyAssignments@2024-04-01' = {
-  name: '${prefix}-require-env-tag'
-  scope: resourceGroup()
-  properties: {
-    displayName: 'Require Environment Tag'
-    description: 'Ensure all resources have the Environment tag'
-    policyDefinitionId: '/providers/Microsoft.Authorization/policyDefinitions/require-a-tag-on-resources'
-    parameters: {
-      tagName: {
-        value: 'Environment'
-      }
-    }
-  }
-}
+// resource requireEnvironmentTag 'Microsoft.Authorization/policyAssignments@2024-04-01' = {
+//   name: '${prefix}-${environment}-require-env-tag'
+//   scope: resourceGroup()
+//   properties: {
+//     displayName: 'Require Environment Tag'
+//     description: 'Ensure all resources have the Environment tag'
+//     policyDefinitionId: '/providers/Microsoft.Authorization/policyDefinitions/6c3b1b79-0b9c-4f23-8a1c-6a7b5c2f3b5f'
+//     parameters: {
+//       tagName: {
+//         value: 'Environment'
+//       }
+//     }
+//   }
+// }
 
-resource allowedLocationsPolicy 'Microsoft.Authorization/policyAssignments@2024-04-01' = {
-  name: '${prefix}-allowed-locations'
-  scope: resourceGroup()
-  properties: {
-    displayName: 'Allowed Locations'
-    description: 'Restrict resources to allowed regions'
-    policyDefinitionId: '/providers/Microsoft.Authorization/policyDefinitions/allowed-locations'
-    parameters: {
-      listOfAllowedLocations: {
-        value: [
-          'eastus'
-          'westeurope'
-        ]
-      }
-    }
-  }
-}
+// resource allowedLocationsPolicy 'Microsoft.Authorization/policyAssignments@2024-04-01' = {
+//   name: '${prefix}-${environment}-allowed-locations'
+//   scope: resourceGroup()
+//   properties: {
+//     displayName: 'Allowed Locations'
+//     description: 'Restrict resources to allowed regions'
+//     policyDefinitionId: '/providers/Microsoft.Authorization/policyDefinitions/e56962a6-4747-49cd-b67b-bf8b01975c4c'
+//     parameters: {
+//       listOfAllowedLocations: {
+//         value: [
+//           location
+//         ]
+//       }
+//     }
+//   }
+// }
 
 // ====================
 // Monitor agent
 // ====================
 
-resource monitorAgent 'Microsoft.HybridCompute/machines/extensions@2024-07-01' = [
+resource monitorAgent 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = [
   for i in range(0, vmCount): {
     name: '${vms[i].name}/AzureMonitorAgent'
     location: location
@@ -392,11 +400,10 @@ resource monitorAgent 'Microsoft.HybridCompute/machines/extensions@2024-07-01' =
       settings: {
         workspaceId: logAnalyticsWorkspace.properties.customerId
       }
+      protectedSettings: {
+        workspaceKey: logAnalyticsWorkspace.listKeys().primarySharedKey
+      }
     }
-    dependsOn: [
-      vms[i]
-      logAnalyticsWorkspace
-    ]
   }
 ]
 
@@ -404,7 +411,7 @@ resource monitorAgent 'Microsoft.HybridCompute/machines/extensions@2024-07-01' =
 // OUTPUTS
 // ====================
 
-output vmNames array = [for vm in vms: vm.name]
-output publicIpAddresses array = [for pip in publicIps: pip.properties.ipAddress]
+output vmNames array = [for i in range(0, vmCount): vms[i].name]
+output publicIpAddresses array = [for i in range(0, vmCount): publicIps[i].properties.ipAddress]
 output logAnalyticsWorkspaceId string = logAnalyticsWorkspace.id
 output storageAccountName string = storageAccount.name
