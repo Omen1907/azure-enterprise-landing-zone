@@ -1,3 +1,5 @@
+## Note: I have yet to split the resources in the main file into their respective folders.
+
 # Deployment Errors & Fixes
 
 This section documents the issues encountered while deploying the Bicep template and how they were resolved.
